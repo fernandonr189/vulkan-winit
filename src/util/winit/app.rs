@@ -1,17 +1,35 @@
+use std::sync::Arc;
+
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    window::{Window, WindowId},
+    window::{Window, WindowAttributes, WindowId},
 };
+
+use super::vulkano::vulkano_utils::Vulkan;
 
 #[derive(Default)]
 pub struct App {
     window: Option<Window>,
+    vulkan: Option<Vulkan>,
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        match self.vulkan {
+            Some(_) => {}
+            None => {
+                println!("Initializing Vulkan");
+                let window = Arc::new(
+                    event_loop
+                        .create_window(WindowAttributes::default())
+                        .unwrap(),
+                );
+                self.vulkan = Some(Vulkan::initialize(&window));
+                println!("Vulkan initialized");
+            }
+        }
         self.window = Some(
             event_loop
                 .create_window(Window::default_attributes())
@@ -29,20 +47,8 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                println!("Redrawing");
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in AboutToWait, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
+                //println!("Redrawing");
 
-                // Draw.
-
-                // Queue a RedrawRequested event.
-                //
-                // You only need to call this if you've determined that you need to redraw in
-                // applications which do not always need to. Applications that redraw continuously
-                // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
             }
             _ => {

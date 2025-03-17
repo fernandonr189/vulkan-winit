@@ -2,18 +2,19 @@ use std::sync::Arc;
 
 use vulkano::{
     Validated, VulkanError, VulkanLibrary,
-    buffer::{BufferContents, Subbuffer},
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
         RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
         allocator::StandardCommandBufferAllocator,
     },
     device::{
-        Device, DeviceExtensions, Queue, QueueFlags,
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
         physical::{PhysicalDevice, PhysicalDeviceType},
     },
-    image::{Image, view::ImageView},
+    image::{Image, ImageUsage, view::ImageView},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::{
         GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
         graphics::{
@@ -29,12 +30,107 @@ use vulkano::{
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     shader::ShaderModule,
-    swapchain::{FromWindowError, Surface, Swapchain},
+    swapchain::{FromWindowError, Surface, Swapchain, SwapchainCreateInfo},
 };
 use winit::window::Window;
 
+pub struct Vulkan {}
+
+impl Vulkan {
+    pub fn initialize(window: &Arc<Window>) -> Self {
+        let instance = create_instance(window).expect("Failed to create Vulkan instance");
+        let surface = create_surface(window.clone(), instance.clone())
+            .expect("Failed to create Vulkan surface");
+        let device_extensions = DeviceExtensions {
+            khr_swapchain: true,
+            ..DeviceExtensions::empty()
+        };
+
+        let (physical_device, queue_family_index) =
+            select_physical_device(&instance, &surface, &device_extensions);
+
+        let (device, mut queues) = Device::new(
+            physical_device.clone(),
+            DeviceCreateInfo {
+                queue_create_infos: vec![QueueCreateInfo {
+                    queue_family_index,
+                    ..Default::default()
+                }],
+                enabled_extensions: device_extensions, // new
+                ..Default::default()
+            },
+        )
+        .expect("failed to create device");
+
+        let queue = queues.next().unwrap();
+
+        let (mut swapchain, images) =
+            create_swapchain(&physical_device, &surface, &window, &device);
+
+        let render_pass = get_render_pass(device.clone(), swapchain.clone());
+        let framebuffers = get_framebuffers(&images, &render_pass.clone());
+
+        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+
+        let vertex1 = MyVertex {
+            position: [-0.5, -0.5],
+        };
+        let vertex2 = MyVertex {
+            position: [0.0, 0.5],
+        };
+        let vertex3 = MyVertex {
+            position: [0.5, -0.25],
+        };
+        let vertex_buffer = Buffer::from_iter(
+            memory_allocator,
+            BufferCreateInfo {
+                usage: BufferUsage::VERTEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            vec![vertex1, vertex2, vertex3],
+        )
+        .unwrap();
+
+        let vs = vs::load(device.clone()).expect("failed to create shader module");
+        let fs = fs::load(device.clone()).expect("failed to create shader module");
+
+        let mut viewport = Viewport {
+            offset: [0.0, 0.0],
+            extent: window.inner_size().into(),
+            depth_range: 0.0..=1.0,
+        };
+
+        let pipeline = get_pipeline(
+            &device.clone(),
+            &vs.clone(),
+            &fs.clone(),
+            &render_pass.clone(),
+            viewport.clone(),
+        );
+
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
+
+        let mut command_buffers = get_command_buffers(
+            &command_buffer_allocator,
+            &queue,
+            &pipeline,
+            &framebuffers,
+            &vertex_buffer,
+        );
+        Vulkan {}
+    }
+}
+
 pub fn get_command_buffers(
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+    command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
@@ -261,4 +357,36 @@ pub fn create_surface(
 ) -> Result<Arc<Surface>, FromWindowError> {
     let surface = Surface::from_window(instance.clone(), window.clone());
     surface
+}
+
+pub fn create_swapchain(
+    physical_device: &Arc<PhysicalDevice>,
+    surface: &Arc<Surface>,
+    window: &Arc<Window>,
+    device: &Arc<Device>,
+) -> (Arc<Swapchain>, Vec<Arc<Image>>) {
+    let caps = physical_device
+        .surface_capabilities(&surface, Default::default())
+        .expect("failed to get surface capabilities");
+
+    let dimensions = window.inner_size();
+    let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
+    let image_format = physical_device
+        .surface_formats(&surface, Default::default())
+        .unwrap()[0]
+        .0;
+
+    Swapchain::new(
+        device.clone(),
+        surface.clone(),
+        SwapchainCreateInfo {
+            min_image_count: caps.min_image_count,
+            image_format,
+            image_extent: dimensions.into(),
+            image_usage: ImageUsage::COLOR_ATTACHMENT,
+            composite_alpha,
+            ..Default::default()
+        },
+    )
+    .unwrap()
 }
