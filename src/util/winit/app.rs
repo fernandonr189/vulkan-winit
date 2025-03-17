@@ -21,11 +21,15 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
+            WindowEvent::Resized(size) => {
+                println!("Resized to {}x{}", size.width, size.height);
+            }
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
+                println!("Redrawing");
                 // Redraw the application.
                 //
                 // It's preferable for applications that do not render continuously to render in
@@ -41,7 +45,9 @@ impl ApplicationHandler for App {
                 // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
             }
-            _ => (),
+            _ => {
+                println!("Unhandled event");
+            }
         }
     }
 }

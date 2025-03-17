@@ -1,5 +1,5 @@
 mod util;
-use util::app::App;
+use util::winit::app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 fn main() {
