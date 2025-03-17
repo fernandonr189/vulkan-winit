@@ -79,10 +79,10 @@ pub fn get_command_buffers(
 }
 
 pub fn get_pipeline(
-    device: Arc<Device>,
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
-    render_pass: Arc<RenderPass>,
+    device: &Arc<Device>,
+    vs: &Arc<ShaderModule>,
+    fs: &Arc<ShaderModule>,
+    render_pass: &Arc<RenderPass>,
     viewport: Viewport,
 ) -> Arc<GraphicsPipeline> {
     let vs = vs.entry_point("main").unwrap();
@@ -206,8 +206,8 @@ pub fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<Re
     .unwrap()
 }
 pub fn select_physical_device(
-    instance: Arc<Instance>,
-    surface: Arc<Surface>,
+    instance: &Arc<Instance>,
+    surface: &Arc<Surface>,
     device_extensions: &DeviceExtensions,
 ) -> (Arc<PhysicalDevice>, u32) {
     instance
@@ -241,7 +241,7 @@ pub fn select_physical_device(
         .expect("no device available")
 }
 
-pub fn create_instance(window: Arc<Window>) -> Result<Arc<Instance>, Validated<VulkanError>> {
+pub fn create_instance(window: &Arc<Window>) -> Result<Arc<Instance>, Validated<VulkanError>> {
     let library = VulkanLibrary::new().expect("no local Vulkan library/DLL");
     let required_extensions = Surface::required_extensions(&(*window)).unwrap();
     let instance = Instance::new(
