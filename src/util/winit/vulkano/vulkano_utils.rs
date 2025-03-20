@@ -4,9 +4,9 @@ use vulkano::{
     Validated, VulkanError, VulkanLibrary,
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
-        RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo,
-        allocator::StandardCommandBufferAllocator,
+        AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage,
+        PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
+        SubpassEndInfo, allocator::StandardCommandBufferAllocator,
     },
     device::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
@@ -30,13 +30,139 @@ use vulkano::{
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     shader::ShaderModule,
-    swapchain::{FromWindowError, Surface, Swapchain, SwapchainCreateInfo},
+    swapchain::{
+        self, FromWindowError, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
+        SwapchainCreateInfo, SwapchainPresentInfo,
+    },
+    sync::{
+        self, GpuFuture,
+        future::{FenceSignalFuture, JoinFuture},
+    },
 };
 use winit::window::Window;
 
-pub struct Vulkan {}
+pub struct Vulkan {
+    swapchain: Arc<Swapchain>,
+    render_pass: Arc<RenderPass>,
+    viewport: Viewport,
+    device: Arc<Device>,
+    command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    queue: Arc<Queue>,
+    vertex_buffer: Subbuffer<[MyVertex]>,
+    fences: Vec<
+        Option<
+            Arc<
+                FenceSignalFuture<
+                    PresentFuture<
+                        CommandBufferExecFuture<
+                            JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>,
+                        >,
+                    >,
+                >,
+            >,
+        >,
+    >,
+    previous_fence: u32,
+}
 
 impl Vulkan {
+    pub fn redraw(&mut self) -> bool {
+        let swapchain = self.swapchain.clone();
+        let mut recreate_swapchain = false;
+        let (image_i, suboptimal, acquire_future) =
+            match swapchain::acquire_next_image(swapchain.clone(), None).map_err(Validated::unwrap)
+            {
+                Ok(r) => r,
+                Err(VulkanError::OutOfDate) => {
+                    return true;
+                }
+                Err(e) => panic!("failed to acquire next image: {e}"),
+            };
+
+        if suboptimal {
+            recreate_swapchain = true;
+        }
+        if let Some(image_fence) = &self.fences[image_i as usize] {
+            image_fence.wait(None).unwrap();
+        }
+
+        let previous_future = match self.fences[self.previous_fence as usize].clone() {
+            // Create a NowFuture
+            None => {
+                let mut now = sync::now(self.device.clone());
+                now.cleanup_finished();
+
+                now.boxed()
+            }
+            // Use the existing FenceSignalFuture
+            Some(fence) => fence.boxed(),
+        };
+        let future = previous_future
+            .join(acquire_future)
+            .then_execute(
+                self.queue.clone(),
+                self.command_buffers[image_i as usize].clone(),
+            )
+            .unwrap()
+            .then_swapchain_present(
+                self.queue.clone(),
+                SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_i),
+            )
+            .then_signal_fence_and_flush();
+
+        self.fences[image_i as usize] = match future.map_err(Validated::unwrap) {
+            Ok(value) => Some(Arc::new(value)),
+            Err(VulkanError::OutOfDate) => {
+                recreate_swapchain = true;
+                None
+            }
+            Err(e) => {
+                println!("failed to flush future: {e}");
+                None
+            }
+        };
+        self.previous_fence = image_i;
+        return recreate_swapchain;
+    }
+    pub fn recreate_swapchain(&mut self, window: &Arc<Window>) {
+        let new_dimensions = window.inner_size();
+
+        let (new_swapchain, new_images) = self
+            .swapchain
+            .recreate(SwapchainCreateInfo {
+                image_extent: new_dimensions.into(),
+                ..self.swapchain.create_info()
+            })
+            .expect("failed to recreate swapchain");
+        self.swapchain = new_swapchain;
+
+        let new_framebuffers = get_framebuffers(&new_images, &self.render_pass.clone());
+
+        let vs = vs::load(self.device.clone()).expect("failed to create shader module");
+        let fs = fs::load(self.device.clone()).expect("failed to create shader module");
+
+        self.viewport.extent = new_dimensions.into();
+        let new_pipeline = get_pipeline(
+            &self.device.clone(),
+            &vs.clone(),
+            &fs.clone(),
+            &self.render_pass.clone(),
+            self.viewport.clone(),
+        );
+
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            self.device.clone(),
+            Default::default(),
+        ));
+
+        self.command_buffers = get_command_buffers(
+            &command_buffer_allocator,
+            &self.queue,
+            &new_pipeline,
+            &new_framebuffers,
+            &self.vertex_buffer,
+        );
+    }
     pub fn initialize(window: &Arc<Window>) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
         let surface = create_surface(window.clone(), instance.clone())
@@ -64,8 +190,7 @@ impl Vulkan {
 
         let queue = queues.next().unwrap();
 
-        let (mut swapchain, images) =
-            create_swapchain(&physical_device, &surface, &window, &device);
+        let (swapchain, images) = create_swapchain(&physical_device, &surface, &window, &device);
 
         let render_pass = get_render_pass(device.clone(), swapchain.clone());
         let framebuffers = get_framebuffers(&images, &render_pass.clone());
@@ -99,7 +224,7 @@ impl Vulkan {
         let vs = vs::load(device.clone()).expect("failed to create shader module");
         let fs = fs::load(device.clone()).expect("failed to create shader module");
 
-        let mut viewport = Viewport {
+        let viewport = Viewport {
             offset: [0.0, 0.0],
             extent: window.inner_size().into(),
             depth_range: 0.0..=1.0,
@@ -118,14 +243,25 @@ impl Vulkan {
             Default::default(),
         ));
 
-        let mut command_buffers = get_command_buffers(
+        let command_buffers = get_command_buffers(
             &command_buffer_allocator,
             &queue,
             &pipeline,
             &framebuffers,
             &vertex_buffer,
         );
-        Vulkan {}
+        let frames_in_flight = images.len();
+        Vulkan {
+            swapchain,
+            render_pass,
+            viewport,
+            device,
+            command_buffers,
+            queue,
+            vertex_buffer,
+            fences: vec![None; frames_in_flight],
+            previous_fence: 0,
+        }
     }
 }
 

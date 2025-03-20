@@ -13,6 +13,9 @@ use super::vulkano::vulkano_utils::Vulkan;
 pub struct App {
     window: Option<Window>,
     vulkan: Option<Vulkan>,
+    size: [u32; 2],
+    resized: bool,
+    recreate_swapchain: bool,
 }
 
 impl ApplicationHandler for App {
@@ -41,19 +44,33 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::Resized(size) => {
                 println!("Resized to {}x{}", size.width, size.height);
+                self.size = [size.width, size.height];
+                self.resized = true;
             }
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                //println!("Redrawing");
+                println!("Redraw requested");
+                if self.resized || self.recreate_swapchain {
+                    self.resized = false;
+                    match self.vulkan.as_mut() {
+                        Some(vulkan) => {
+                            let window = Arc::new(
+                                event_loop
+                                    .create_window(WindowAttributes::default())
+                                    .unwrap(),
+                            );
+                            vulkan.recreate_swapchain(&window);
+                        }
+                        None => {}
+                    }
+                }
 
-                self.window.as_ref().unwrap().request_redraw();
+                self.recreate_swapchain = self.vulkan.as_mut().unwrap().redraw();
             }
-            _ => {
-                println!("Unhandled event");
-            }
+            _ => {}
         }
     }
 }
