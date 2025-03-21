@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+type FenceFuture = FenceSignalFuture<
+    PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>,
+>;
+
 use vulkano::{
     Validated, VulkanError, VulkanLibrary,
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -49,19 +53,7 @@ pub struct Vulkan {
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     queue: Arc<Queue>,
     vertex_buffer: Subbuffer<[MyVertex]>,
-    fences: Vec<
-        Option<
-            Arc<
-                FenceSignalFuture<
-                    PresentFuture<
-                        CommandBufferExecFuture<
-                            JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>,
-                        >,
-                    >,
-                >,
-            >,
-        >,
-    >,
+    fences: Vec<Option<Arc<FenceFuture>>>,
     previous_fence: u32,
 }
 
