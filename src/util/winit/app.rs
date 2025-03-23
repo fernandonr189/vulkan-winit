@@ -36,7 +36,7 @@ impl ApplicationHandler for App {
                     &window,
                     vec![
                         Triangle {
-                            vertices: [
+                            vertices: vec![
                                 SimpleVertex {
                                     position: [-1.0, -1.0],
                                 },
@@ -49,7 +49,7 @@ impl ApplicationHandler for App {
                             ],
                         },
                         Triangle {
-                            vertices: [
+                            vertices: vec![
                                 SimpleVertex {
                                     position: [1.0, 1.0],
                                 },

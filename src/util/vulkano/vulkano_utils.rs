@@ -195,12 +195,8 @@ impl Vulkan {
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
         let mut vertices: Vec<SimpleVertex> = Vec::new();
-        for element in elements {
-            for vertex in element.vertices {
-                vertices.push(SimpleVertex {
-                    position: vertex.position,
-                })
-            }
+        for mut element in elements {
+            vertices.append(&mut element.vertices);
         }
 
         let vertex_buffer = Buffer::from_iter(
