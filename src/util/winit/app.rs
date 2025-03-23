@@ -7,7 +7,7 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
-use super::vulkano::vulkano_utils::Vulkan;
+use crate::util::vulkano::vulkano_utils::Vulkan;
 
 #[derive(Default)]
 pub struct App {
