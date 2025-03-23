@@ -38,26 +38,26 @@ impl ApplicationHandler for App {
                         Triangle {
                             vertices: [
                                 SimpleVertex {
-                                    position: [-1.0, -0.5],
+                                    position: [-1.0, -1.0],
                                 },
                                 SimpleVertex {
-                                    position: [0.5, -0.2],
+                                    position: [0.0, 0.0],
                                 },
                                 SimpleVertex {
-                                    position: [0.0, 0.1],
+                                    position: [-1.0, 0.0],
                                 },
                             ],
                         },
                         Triangle {
                             vertices: [
                                 SimpleVertex {
-                                    position: [-0.2, -0.5],
+                                    position: [1.0, 1.0],
                                 },
                                 SimpleVertex {
-                                    position: [0.5, -0.2],
+                                    position: [0.0, 0.0],
                                 },
                                 SimpleVertex {
-                                    position: [0.0, 0.1],
+                                    position: [1.0, 0.0],
                                 },
                             ],
                         },
