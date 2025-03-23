@@ -45,6 +45,11 @@ use vulkano::{
 };
 use winit::window::Window;
 
+use crate::util::{
+    components::triangle::Triangle,
+    shaders::shaders::{fragmen_shader, vertex_shader},
+};
+
 pub struct Vulkan {
     swapchain: Arc<Swapchain>,
     render_pass: Arc<RenderPass>,
@@ -52,7 +57,7 @@ pub struct Vulkan {
     device: Arc<Device>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     queue: Arc<Queue>,
-    vertex_buffer: Subbuffer<[MyVertex]>,
+    vertex_buffer: Subbuffer<[SimpleVertex]>,
     fences: Vec<Option<Arc<FenceFuture>>>,
     previous_fence: u32,
 }
@@ -130,8 +135,8 @@ impl Vulkan {
 
         let new_framebuffers = get_framebuffers(&new_images, &self.render_pass.clone());
 
-        let vs = vs::load(self.device.clone()).expect("failed to create shader module");
-        let fs = fs::load(self.device.clone()).expect("failed to create shader module");
+        let vs = vertex_shader::load(self.device.clone()).expect("failed to create shader module");
+        let fs = fragmen_shader::load(self.device.clone()).expect("failed to create shader module");
 
         self.viewport.extent = new_dimensions.into();
         let new_pipeline = get_pipeline(
@@ -189,15 +194,8 @@ impl Vulkan {
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
-        let vertex1 = MyVertex {
-            position: [-0.5, -0.5],
-        };
-        let vertex2 = MyVertex {
-            position: [0.0, 0.5],
-        };
-        let vertex3 = MyVertex {
-            position: [0.5, -0.25],
-        };
+        let triangle = Triangle::new();
+
         let vertex_buffer = Buffer::from_iter(
             memory_allocator,
             BufferCreateInfo {
@@ -209,12 +207,12 @@ impl Vulkan {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vec![vertex1, vertex2, vertex3],
+            triangle.vertices,
         )
         .unwrap();
 
-        let vs = vs::load(device.clone()).expect("failed to create shader module");
-        let fs = fs::load(device.clone()).expect("failed to create shader module");
+        let vs = vertex_shader::load(device.clone()).expect("failed to create shader module");
+        let fs = fragmen_shader::load(device.clone()).expect("failed to create shader module");
 
         let viewport = Viewport {
             offset: [0.0, 0.0],
@@ -262,7 +260,7 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
-    vertex_buffer: &Subbuffer<[MyVertex]>,
+    vertex_buffer: &Subbuffer<[SimpleVertex]>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -312,7 +310,7 @@ pub fn get_pipeline(
     let vs = vs.entry_point("main").unwrap();
     let fs = fs.entry_point("main").unwrap();
 
-    let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
+    let vertex_input_state = SimpleVertex::per_vertex().definition(&vs).unwrap();
 
     let stages = [
         PipelineShaderStageCreateInfo::new(vs),
@@ -355,39 +353,9 @@ pub fn get_pipeline(
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
-pub struct MyVertex {
+pub struct SimpleVertex {
     #[format(R32G32_SFLOAT)]
     pub position: [f32; 2],
-}
-
-pub mod vs {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        src: "
-            #version 460
-
-            layout(location = 0) in vec2 position;
-
-            void main() {
-                gl_Position = vec4(position, 0.0, 1.0);
-            }
-        ",
-    }
-}
-
-pub mod fs {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        src: "
-            #version 460
-
-            layout(location = 0) out vec4 f_color;
-
-            void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
-            }
-        ",
-    }
 }
 
 pub fn get_framebuffers(
