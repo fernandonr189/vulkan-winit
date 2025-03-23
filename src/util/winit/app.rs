@@ -7,7 +7,10 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
-use crate::util::vulkano::vulkano_utils::Vulkan;
+use crate::util::{
+    components::triangle::Triangle,
+    vulkano::vulkano_utils::{SimpleVertex, Vulkan},
+};
 
 #[derive(Default)]
 pub struct App {
@@ -29,7 +32,37 @@ impl ApplicationHandler for App {
                         .create_window(WindowAttributes::default())
                         .unwrap(),
                 );
-                self.vulkan = Some(Vulkan::initialize(&window));
+                self.vulkan = Some(Vulkan::initialize(
+                    &window,
+                    vec![
+                        Triangle {
+                            vertices: [
+                                SimpleVertex {
+                                    position: [-1.0, -0.5],
+                                },
+                                SimpleVertex {
+                                    position: [0.5, -0.2],
+                                },
+                                SimpleVertex {
+                                    position: [0.0, 0.1],
+                                },
+                            ],
+                        },
+                        Triangle {
+                            vertices: [
+                                SimpleVertex {
+                                    position: [-0.2, -0.5],
+                                },
+                                SimpleVertex {
+                                    position: [0.5, -0.2],
+                                },
+                                SimpleVertex {
+                                    position: [0.0, 0.1],
+                                },
+                            ],
+                        },
+                    ],
+                ));
                 println!("Vulkan initialized");
             }
         }

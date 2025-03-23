@@ -160,7 +160,7 @@ impl Vulkan {
             &self.vertex_buffer,
         );
     }
-    pub fn initialize(window: &Arc<Window>) -> Self {
+    pub fn initialize(window: &Arc<Window>, elements: Vec<Triangle>) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
         let surface = create_surface(window.clone(), instance.clone())
             .expect("Failed to create Vulkan surface");
@@ -194,7 +194,14 @@ impl Vulkan {
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
-        let triangle = Triangle::new();
+        let mut vertices: Vec<SimpleVertex> = Vec::new();
+        for element in elements {
+            for vertex in element.vertices {
+                vertices.push(SimpleVertex {
+                    position: vertex.position,
+                })
+            }
+        }
 
         let vertex_buffer = Buffer::from_iter(
             memory_allocator,
@@ -207,7 +214,7 @@ impl Vulkan {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            triangle.vertices,
+            vertices,
         )
         .unwrap();
 
