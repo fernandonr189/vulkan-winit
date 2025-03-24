@@ -47,6 +47,8 @@ impl ApplicationHandler for App {
                                     position: [-1.0, 0.0],
                                 },
                             ],
+                            descriptor_set: None,
+                            color: [1.0, 0.0, 0.0, 1.0],
                         },
                         Triangle {
                             vertices: vec![
@@ -60,6 +62,8 @@ impl ApplicationHandler for App {
                                     position: [1.0, 0.0],
                                 },
                             ],
+                            descriptor_set: None,
+                            color: [0.0, 1.0, 0.0, 1.0],
                         },
                     ],
                 ));

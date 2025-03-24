@@ -63,7 +63,6 @@ pub struct Vulkan {
     elements: Vec<Triangle>,
     fences: Vec<Option<Arc<FenceFuture>>>,
     previous_fence: u32,
-    descriptor_set: Arc<DescriptorSet>,
 }
 
 impl Vulkan {
@@ -175,11 +174,10 @@ impl Vulkan {
             &new_pipeline,
             &new_framebuffers,
             self.elements.clone(),
-            &self.descriptor_set,
             &memory_allocator,
         );
     }
-    pub fn initialize(window: &Arc<Window>, elements: Vec<Triangle>) -> Self {
+    pub fn initialize(window: &Arc<Window>, mut elements: Vec<Triangle>) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
         let surface = create_surface(window.clone(), instance.clone())
             .expect("Failed to create Vulkan surface");
@@ -243,41 +241,43 @@ impl Vulkan {
             vertex_input_state,
         );
 
-        let color_buffer = Buffer::from_data(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            ColorUniform {
-                input_color: [1.0, 1.0, 1.0, 1.0],
-            },
-        )
-        .unwrap();
-
-        let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
-            device.clone(),
-            Default::default(),
-        ));
-        let pipeline_layout = pipeline.layout();
-
-        let descriptor_set_layouts = pipeline_layout.set_layouts();
-        let descriptor_set_layout_index = 0;
-        let descriptor_set_layout = descriptor_set_layouts
-            .get(descriptor_set_layout_index)
+        for element in elements.iter_mut() {
+            let color_buffer = Buffer::from_data(
+                memory_allocator.clone(),
+                BufferCreateInfo {
+                    usage: BufferUsage::UNIFORM_BUFFER,
+                    ..Default::default()
+                },
+                AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                ColorUniform {
+                    input_color: element.color,
+                },
+            )
             .unwrap();
-        let descriptor_set = DescriptorSet::new(
-            descriptor_set_allocator,
-            descriptor_set_layout.clone(),
-            [WriteDescriptorSet::buffer(0, color_buffer)],
-            [],
-        )
-        .unwrap();
+            let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
+                device.clone(),
+                Default::default(),
+            ));
+            let pipeline_layout = pipeline.layout();
+
+            let descriptor_set_layouts = pipeline_layout.set_layouts();
+            let descriptor_set_layout_index = 0;
+            let descriptor_set_layout = descriptor_set_layouts
+                .get(descriptor_set_layout_index)
+                .unwrap();
+            let descriptor_set = DescriptorSet::new(
+                descriptor_set_allocator,
+                descriptor_set_layout.clone(),
+                [WriteDescriptorSet::buffer(0, color_buffer)],
+                [],
+            )
+            .unwrap();
+            element.descriptor_set = Some(descriptor_set);
+        }
 
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
             device.clone(),
@@ -290,7 +290,6 @@ impl Vulkan {
             &pipeline,
             &framebuffers,
             elements.clone(),
-            &descriptor_set,
             &memory_allocator,
         );
         let frames_in_flight = images.len();
@@ -304,7 +303,6 @@ impl Vulkan {
             elements,
             fences: vec![None; frames_in_flight],
             previous_fence: 0,
-            descriptor_set,
         }
     }
 }
@@ -315,7 +313,6 @@ pub fn get_command_buffers(
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
     elements: Vec<Triangle>,
-    descriptor_set: &Arc<DescriptorSet>,
     memory_allocator: &Arc<StandardMemoryAllocator>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
@@ -364,7 +361,7 @@ pub fn get_command_buffers(
                             PipelineBindPoint::Graphics,
                             pipeline.layout().clone(),
                             0,
-                            descriptor_set.clone(),
+                            element.descriptor_set.clone().unwrap(),
                         )
                         .unwrap()
                         .bind_vertex_buffers(0, vertex_buffer.clone())
