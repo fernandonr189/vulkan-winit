@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::util::{
-    components::triangle::Triangle,
+    components::{shape::Shape, triangle::Triangle},
     vulkano::vulkano_utils::{SimpleVertex, Vulkan},
 };
 
@@ -36,7 +36,7 @@ impl ApplicationHandler for App {
                 self.vulkan = Some(Vulkan::initialize(
                     &window,
                     vec![
-                        Triangle::new(
+                        Shape::new_triangle(
                             vec![
                                 SimpleVertex {
                                     position: [-1.0, -1.0],
@@ -50,7 +50,7 @@ impl ApplicationHandler for App {
                             ],
                             [1.0, 0.0, 0.0, 1.0],
                         ),
-                        Triangle::new(
+                        Shape::new_triangle(
                             vec![
                                 SimpleVertex {
                                     position: [1.0, 1.0],

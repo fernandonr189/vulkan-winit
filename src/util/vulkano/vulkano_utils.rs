@@ -50,7 +50,7 @@ use vulkano::{
 use winit::window::Window;
 
 use crate::util::{
-    components::triangle::Triangle,
+    components::shape::Shape,
     shaders::shaders::{fragmen_shader, vertex_shader},
 };
 
@@ -61,7 +61,7 @@ pub struct Vulkan {
     device: Arc<Device>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     queue: Arc<Queue>,
-    elements: Vec<Triangle>,
+    elements: Vec<Shape>,
     fences: Vec<Option<Arc<FenceFuture>>>,
     memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
@@ -160,11 +160,7 @@ impl Vulkan {
             &self.memory_allocator,
         );
     }
-    pub fn initialize(
-        window: &Arc<Window>,
-        mut elements: Vec<Triangle>,
-        allow_tearing: bool,
-    ) -> Self {
+    pub fn initialize(window: &Arc<Window>, mut elements: Vec<Shape>, allow_tearing: bool) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
         let surface = Surface::from_window(instance.clone(), window.clone())
             .expect("Failed to create Vulkan surface");
@@ -242,7 +238,7 @@ impl Vulkan {
                     ..Default::default()
                 },
                 ColorUniform {
-                    input_color: element.color,
+                    input_color: element.get_color(),
                 },
             )
             .unwrap();
@@ -264,7 +260,7 @@ impl Vulkan {
                 [],
             )
             .unwrap();
-            element.descriptor_set = Some(descriptor_set);
+            element.update_descriptor_set(descriptor_set);
         }
 
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
@@ -305,7 +301,7 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
-    mut elements: Vec<Triangle>,
+    mut elements: Vec<Shape>,
     memory_allocator: &Arc<StandardMemoryAllocator>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
@@ -332,7 +328,7 @@ pub fn get_command_buffers(
                     )
                     .unwrap();
                 for element in elements.iter_mut() {
-                    match element.vertex_buffer {
+                    match element.get_vertex_buffer() {
                         Some(_) => {}
                         None => {
                             let vertex_buffer = Buffer::from_iter(
@@ -346,10 +342,10 @@ pub fn get_command_buffers(
                                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                                     ..Default::default()
                                 },
-                                element.vertices.clone(),
+                                element.get_vertices().clone(),
                             )
                             .unwrap();
-                            element.vertex_buffer = Some(vertex_buffer);
+                            element.update_vertex_buffer(vertex_buffer);
                         }
                     }
 
@@ -360,12 +356,17 @@ pub fn get_command_buffers(
                             PipelineBindPoint::Graphics,
                             pipeline.layout().clone(),
                             0,
-                            element.descriptor_set.clone().unwrap(),
+                            element.get_descriptor_set().clone().unwrap(),
                         )
                         .unwrap()
-                        .bind_vertex_buffers(0, element.vertex_buffer.clone().unwrap())
+                        .bind_vertex_buffers(0, element.get_vertex_buffer().clone().unwrap())
                         .unwrap()
-                        .draw(element.vertex_buffer.clone().unwrap().len() as u32, 1, 0, 0)
+                        .draw(
+                            element.get_vertex_buffer().clone().unwrap().len() as u32,
+                            1,
+                            0,
+                            0,
+                        )
                         .unwrap();
                 }
                 builder.end_render_pass(SubpassEndInfo::default()).unwrap();
