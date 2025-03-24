@@ -11,3 +11,14 @@ pub struct Triangle {
     pub vertex_buffer: Option<Subbuffer<[SimpleVertex]>>,
     pub color: [f32; 4],
 }
+
+impl Triangle {
+    pub fn new(vertices: Vec<SimpleVertex>, color: [f32; 4]) -> Self {
+        Triangle {
+            vertices,
+            descriptor_set: None,
+            vertex_buffer: None,
+            color,
+        }
+    }
+}

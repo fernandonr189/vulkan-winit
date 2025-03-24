@@ -35,8 +35,8 @@ impl ApplicationHandler for App {
                 self.vulkan = Some(Vulkan::initialize(
                     &window,
                     vec![
-                        Triangle {
-                            vertices: vec![
+                        Triangle::new(
+                            vec![
                                 SimpleVertex {
                                     position: [-1.0, -1.0],
                                 },
@@ -47,12 +47,10 @@ impl ApplicationHandler for App {
                                     position: [-1.0, 0.0],
                                 },
                             ],
-                            descriptor_set: None,
-                            color: [1.0, 0.0, 0.0, 1.0],
-                            vertex_buffer: None,
-                        },
-                        Triangle {
-                            vertices: vec![
+                            [1.0, 0.0, 0.0, 1.0],
+                        ),
+                        Triangle::new(
+                            vec![
                                 SimpleVertex {
                                     position: [1.0, 1.0],
                                 },
@@ -63,10 +61,8 @@ impl ApplicationHandler for App {
                                     position: [1.0, 0.0],
                                 },
                             ],
-                            descriptor_set: None,
-                            color: [0.0, 1.0, 0.0, 1.0],
-                            vertex_buffer: None,
-                        },
+                            [0.0, 1.0, 0.0, 1.0],
+                        ),
                     ],
                 ));
                 println!("Vulkan initialized");
