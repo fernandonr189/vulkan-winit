@@ -14,7 +14,7 @@ use crate::util::{
 
 #[derive(Default)]
 pub struct App {
-    window: Option<Window>,
+    window: Option<Arc<Window>>,
     vulkan: Option<Vulkan>,
     size: [u32; 2],
     resized: bool,
@@ -27,11 +27,12 @@ impl ApplicationHandler for App {
             Some(_) => {}
             None => {
                 println!("Initializing Vulkan");
-                let window = Arc::new(
+                self.window = Some(Arc::new(
                     event_loop
                         .create_window(WindowAttributes::default())
                         .unwrap(),
-                );
+                ));
+                let window = self.window.clone().unwrap();
                 self.vulkan = Some(Vulkan::initialize(
                     &window,
                     vec![
@@ -68,11 +69,6 @@ impl ApplicationHandler for App {
                 println!("Vulkan initialized");
             }
         }
-        self.window = Some(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -92,11 +88,7 @@ impl ApplicationHandler for App {
                     self.resized = false;
                     match self.vulkan.as_mut() {
                         Some(vulkan) => {
-                            let window = Arc::new(
-                                event_loop
-                                    .create_window(WindowAttributes::default())
-                                    .unwrap(),
-                            );
+                            let window = self.window.clone().unwrap();
                             vulkan.recreate_swapchain(&window);
                         }
                         None => {}

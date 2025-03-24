@@ -19,6 +19,7 @@ use vulkano::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
         physical::{PhysicalDevice, PhysicalDeviceType},
     },
+    format::Format,
     image::{Image, ImageUsage, view::ImageView},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
@@ -38,8 +39,8 @@ use vulkano::{
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::{
-        self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-        SwapchainPresentInfo,
+        self, ColorSpace, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
+        SwapchainCreateInfo, SwapchainPresentInfo,
     },
     sync::{
         self, GpuFuture,
@@ -512,6 +513,33 @@ pub fn create_instance(window: &Arc<Window>) -> Result<Arc<Instance>, Validated<
     instance
 }
 
+fn choose_memory_efficient_format(
+    available_formats: &Vec<(Format, ColorSpace)>,
+) -> vulkano::format::Format {
+    use vulkano::format::Format;
+    let preferred_formats = [
+        Format::R5G6B5_UNORM_PACK16,   // 16 bits per pixel
+        Format::A1R5G5B5_UNORM_PACK16, // 16 bits per pixel
+        Format::B4G4R4A4_UNORM_PACK16, // 16 bits per pixel
+        Format::R8G8B8_UNORM,          // 24 bits per pixel
+        Format::B8G8R8_UNORM,          // 24 bits per pixel
+        Format::R8G8B8A8_UNORM,        // 32 bits per pixel
+        Format::B8G8R8A8_UNORM,        // 32 bits per pixel
+        Format::R8G8B8A8_SRGB,         // 32 bits per pixel
+        Format::B8G8R8A8_SRGB,         // 32 bits per pixel
+    ];
+
+    for preferred_format in preferred_formats.iter() {
+        if available_formats
+            .iter()
+            .any(|(format, _)| format == preferred_format)
+        {
+            return *preferred_format;
+        }
+    }
+    available_formats[0].0
+}
+
 pub fn create_swapchain(
     physical_device: &Arc<PhysicalDevice>,
     surface: &Arc<Surface>,
@@ -524,10 +552,10 @@ pub fn create_swapchain(
 
     let dimensions = window.inner_size();
     let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
-    let image_format = physical_device
+    let image_formats = physical_device
         .surface_formats(&surface, Default::default())
-        .unwrap()[0]
-        .0;
+        .unwrap();
+    let image_format = choose_memory_efficient_format(&image_formats);
 
     Swapchain::new(
         device.clone(),
