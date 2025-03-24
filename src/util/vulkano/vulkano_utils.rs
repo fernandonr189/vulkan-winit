@@ -326,6 +326,8 @@ pub fn get_command_buffers(
                             ..Default::default()
                         },
                     )
+                    .unwrap()
+                    .bind_pipeline_graphics(pipeline.clone())
                     .unwrap();
                 for element in elements.iter_mut() {
                     match element.get_vertex_buffer() {
@@ -350,8 +352,6 @@ pub fn get_command_buffers(
                     }
 
                     builder
-                        .bind_pipeline_graphics(pipeline.clone())
-                        .unwrap()
                         .bind_descriptor_sets(
                             PipelineBindPoint::Graphics,
                             pipeline.layout().clone(),
