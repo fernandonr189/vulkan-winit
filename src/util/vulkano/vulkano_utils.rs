@@ -434,7 +434,7 @@ pub struct SimpleVertex {
 #[repr(C)]
 #[derive(Default, BufferContents)]
 struct ColorUniform {
-    input_color: [f32; 4], // RGBA color
+    input_color: [f32; 4],
 }
 
 pub fn get_framebuffers(
@@ -462,7 +462,6 @@ pub fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<Re
         device,
         attachments: {
             color: {
-                // Set the format the same as the swapchain.
                 format: swapchain.image_format(),
                 samples: 1,
                 load_op: Clear,
@@ -489,9 +488,6 @@ pub fn select_physical_device(
             p.queue_family_properties()
                 .iter()
                 .enumerate()
-                // Find the first first queue family that is suitable.
-                // If none is found, `None` is returned to `filter_map`,
-                // which disqualifies this physical device.
                 .position(|(i, q)| {
                     q.queue_flags.contains(QueueFlags::GRAPHICS)
                         && p.surface_support(i as u32, &surface).unwrap_or(false)
@@ -503,10 +499,6 @@ pub fn select_physical_device(
             PhysicalDeviceType::IntegratedGpu => 1,
             PhysicalDeviceType::VirtualGpu => 2,
             PhysicalDeviceType::Cpu => 3,
-
-            // Note that there exists `PhysicalDeviceType::Other`, however,
-            // `PhysicalDeviceType` is a non-exhaustive enum. Thus, one should
-            // match wildcard `_` to catch all unknown device types.
             _ => 4,
         })
         .expect("no device available")
