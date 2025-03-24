@@ -62,6 +62,7 @@ pub struct Vulkan {
     queue: Arc<Queue>,
     elements: Vec<Triangle>,
     fences: Vec<Option<Arc<FenceFuture>>>,
+    memory_allocator: Arc<StandardMemoryAllocator>,
     previous_fence: u32,
 }
 
@@ -87,14 +88,12 @@ impl Vulkan {
         }
 
         let previous_future = match self.fences[self.previous_fence as usize].clone() {
-            // Create a NowFuture
             None => {
                 let mut now = sync::now(self.device.clone());
                 now.cleanup_finished();
 
                 now.boxed()
             }
-            // Use the existing FenceSignalFuture
             Some(fence) => fence.boxed(),
         };
         let future = previous_future
@@ -166,7 +165,6 @@ impl Vulkan {
             self.device.clone(),
             Default::default(),
         ));
-        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(self.device.clone()));
 
         self.command_buffers = get_command_buffers(
             &command_buffer_allocator,
@@ -174,7 +172,7 @@ impl Vulkan {
             &new_pipeline,
             &new_framebuffers,
             self.elements.clone(),
-            &memory_allocator,
+            &self.memory_allocator,
         );
     }
     pub fn initialize(window: &Arc<Window>, mut elements: Vec<Triangle>) -> Self {
@@ -303,6 +301,7 @@ impl Vulkan {
             elements,
             fences: vec![None; frames_in_flight],
             previous_fence: 0,
+            memory_allocator,
         }
     }
 }
