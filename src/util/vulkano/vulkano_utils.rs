@@ -67,6 +67,7 @@ pub struct Vulkan {
     previous_fence: u32,
     stages: [PipelineShaderStageCreateInfo; 2],
     vertex_input_state: VertexInputState,
+    layout: Arc<PipelineLayout>,
 }
 
 impl Vulkan {
@@ -140,13 +141,12 @@ impl Vulkan {
 
         let new_framebuffers = get_framebuffers(&new_images, &self.render_pass.clone());
 
-        let layout = get_layout(&self.device, self.stages.clone());
         self.viewport.extent = new_dimensions.into();
         let new_pipeline = get_pipeline(
             &self.device.clone(),
             &self.render_pass.clone(),
             self.viewport.clone(),
-            layout.clone(),
+            self.layout.clone(),
             self.stages.clone(),
             &self.vertex_input_state,
         );
@@ -290,6 +290,7 @@ impl Vulkan {
             command_buffer_allocator,
             stages,
             vertex_input_state,
+            layout,
         }
     }
 }
