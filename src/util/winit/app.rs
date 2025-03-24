@@ -65,6 +65,7 @@ impl ApplicationHandler for App {
                             [0.0, 1.0, 0.0, 1.0],
                         ),
                     ],
+                    true,
                 ));
                 println!("Vulkan initialized");
             }

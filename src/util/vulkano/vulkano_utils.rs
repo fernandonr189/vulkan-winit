@@ -39,7 +39,7 @@ use vulkano::{
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::{
-        self, ColorSpace, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
+        self, ColorSpace, PresentFuture, PresentMode, Surface, Swapchain, SwapchainAcquireFuture,
         SwapchainCreateInfo, SwapchainPresentInfo,
     },
     sync::{
@@ -70,7 +70,6 @@ pub struct Vulkan {
     vertex_input_state: VertexInputState,
     layout: Arc<PipelineLayout>,
 }
-
 impl Vulkan {
     pub fn redraw(&mut self) -> bool {
         let swapchain = self.swapchain.clone();
@@ -161,7 +160,11 @@ impl Vulkan {
             &self.memory_allocator,
         );
     }
-    pub fn initialize(window: &Arc<Window>, mut elements: Vec<Triangle>) -> Self {
+    pub fn initialize(
+        window: &Arc<Window>,
+        mut elements: Vec<Triangle>,
+        allow_tearing: bool,
+    ) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
         let surface = Surface::from_window(instance.clone(), window.clone())
             .expect("Failed to create Vulkan surface");
@@ -188,7 +191,8 @@ impl Vulkan {
 
         let queue = queues.next().unwrap();
 
-        let (swapchain, images) = create_swapchain(&physical_device, &surface, &window, &device);
+        let (swapchain, images) =
+            create_swapchain(&physical_device, &surface, &window, &device, allow_tearing);
 
         let render_pass = get_render_pass(device.clone(), swapchain.clone());
         let framebuffers = get_framebuffers(&images, &render_pass.clone());
@@ -545,6 +549,7 @@ pub fn create_swapchain(
     surface: &Arc<Surface>,
     window: &Arc<Window>,
     device: &Arc<Device>,
+    allow_tearing: bool,
 ) -> (Arc<Swapchain>, Vec<Arc<Image>>) {
     let caps = physical_device
         .surface_capabilities(&surface, Default::default())
@@ -566,6 +571,11 @@ pub fn create_swapchain(
             image_extent: dimensions.into(),
             image_usage: ImageUsage::COLOR_ATTACHMENT,
             composite_alpha,
+            present_mode: if allow_tearing {
+                PresentMode::Immediate
+            } else {
+                PresentMode::Fifo
+            },
             ..Default::default()
         },
     )
