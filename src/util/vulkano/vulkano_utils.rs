@@ -51,7 +51,7 @@ use winit::window::Window;
 
 use crate::util::{
     components::shape::Shape,
-    shaders::shaders::{fragmen_shader, vertex_shader},
+    shaders::shaders::{fragment_shader, vertex_shader},
 };
 
 pub struct Vulkan {
@@ -196,7 +196,7 @@ impl Vulkan {
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
 
         let vs = vertex_shader::load(device.clone()).expect("failed to create shader module");
-        let fs = fragmen_shader::load(device.clone()).expect("failed to create shader module");
+        let fs = fragment_shader::load(device.clone()).expect("failed to create shader module");
 
         let viewport = Viewport {
             offset: [0.0, 0.0],
