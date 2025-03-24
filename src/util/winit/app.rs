@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::util::{
-    components::{shape::Shape, triangle::Triangle},
+    components::shape::Shape,
     vulkano::vulkano_utils::{SimpleVertex, Vulkan},
 };
 
@@ -64,6 +64,7 @@ impl ApplicationHandler for App {
                             ],
                             [0.0, 1.0, 0.0, 1.0],
                         ),
+                        Shape::new_rectangle(0.0, 0.0, 0.5, 0.5, [1.0, 0.0, 1.0, 1.0]),
                     ],
                     true,
                 ));
