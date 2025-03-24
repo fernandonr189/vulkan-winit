@@ -63,6 +63,7 @@ pub struct Vulkan {
     elements: Vec<Triangle>,
     fences: Vec<Option<Arc<FenceFuture>>>,
     memory_allocator: Arc<StandardMemoryAllocator>,
+    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     previous_fence: u32,
 }
 
@@ -161,13 +162,8 @@ impl Vulkan {
             vertex_input_state,
         );
 
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
-            self.device.clone(),
-            Default::default(),
-        ));
-
         self.command_buffers = get_command_buffers(
-            &command_buffer_allocator,
+            &self.command_buffer_allocator,
             &self.queue,
             &new_pipeline,
             &new_framebuffers,
@@ -302,6 +298,7 @@ impl Vulkan {
             fences: vec![None; frames_in_flight],
             previous_fence: 0,
             memory_allocator,
+            command_buffer_allocator,
         }
     }
 }
@@ -311,7 +308,7 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
-    elements: Vec<Triangle>,
+    mut elements: Vec<Triangle>,
     memory_allocator: &Arc<StandardMemoryAllocator>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
@@ -337,21 +334,27 @@ pub fn get_command_buffers(
                         },
                     )
                     .unwrap();
-                for element in elements.iter() {
-                    let vertex_buffer = Buffer::from_iter(
-                        memory_allocator.clone(),
-                        BufferCreateInfo {
-                            usage: BufferUsage::VERTEX_BUFFER,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                            ..Default::default()
-                        },
-                        element.vertices.clone(),
-                    )
-                    .unwrap();
+                for element in elements.iter_mut() {
+                    match element.vertex_buffer {
+                        Some(_) => {}
+                        None => {
+                            let vertex_buffer = Buffer::from_iter(
+                                memory_allocator.clone(),
+                                BufferCreateInfo {
+                                    usage: BufferUsage::VERTEX_BUFFER,
+                                    ..Default::default()
+                                },
+                                AllocationCreateInfo {
+                                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                                    ..Default::default()
+                                },
+                                element.vertices.clone(),
+                            )
+                            .unwrap();
+                            element.vertex_buffer = Some(vertex_buffer);
+                        }
+                    }
 
                     builder
                         .bind_pipeline_graphics(pipeline.clone())
@@ -363,9 +366,9 @@ pub fn get_command_buffers(
                             element.descriptor_set.clone().unwrap(),
                         )
                         .unwrap()
-                        .bind_vertex_buffers(0, vertex_buffer.clone())
+                        .bind_vertex_buffers(0, element.vertex_buffer.clone().unwrap())
                         .unwrap()
-                        .draw(vertex_buffer.len() as u32, 1, 0, 0)
+                        .draw(element.vertex_buffer.clone().unwrap().len() as u32, 1, 0, 0)
                         .unwrap();
                 }
                 builder.end_render_pass(SubpassEndInfo::default()).unwrap();

@@ -49,6 +49,7 @@ impl ApplicationHandler for App {
                             ],
                             descriptor_set: None,
                             color: [1.0, 0.0, 0.0, 1.0],
+                            vertex_buffer: None,
                         },
                         Triangle {
                             vertices: vec![
@@ -64,6 +65,7 @@ impl ApplicationHandler for App {
                             ],
                             descriptor_set: None,
                             color: [0.0, 1.0, 0.0, 1.0],
+                            vertex_buffer: None,
                         },
                     ],
                 ));
