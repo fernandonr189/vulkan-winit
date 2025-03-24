@@ -21,8 +21,12 @@ pub mod fragmen_shader {
 
             layout(location = 0) out vec4 f_color;
 
+            layout(set = 0, binding = 0) uniform ColorUniform {
+                vec4 input_color;
+            };
+
             void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                f_color = input_color;
             }
         ",
     }

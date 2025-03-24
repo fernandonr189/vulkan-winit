@@ -12,6 +12,9 @@ use vulkano::{
         PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
         SubpassEndInfo, allocator::StandardCommandBufferAllocator,
     },
+    descriptor_set::{
+        DescriptorSet, WriteDescriptorSet, allocator::StandardDescriptorSetAllocator,
+    },
     device::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
         physical::{PhysicalDevice, PhysicalDeviceType},
@@ -20,20 +23,20 @@ use vulkano::{
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::{
-        GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+        GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+        PipelineShaderStageCreateInfo,
         graphics::{
             GraphicsPipelineCreateInfo,
             color_blend::{ColorBlendAttachmentState, ColorBlendState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
-            vertex_input::{Vertex, VertexDefinition},
+            vertex_input::{Vertex, VertexDefinition, VertexInputState},
             viewport::{Viewport, ViewportState},
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
-    shader::ShaderModule,
     swapchain::{
         self, FromWindowError, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
         SwapchainCreateInfo, SwapchainPresentInfo,
@@ -60,6 +63,7 @@ pub struct Vulkan {
     vertex_buffer: Subbuffer<[SimpleVertex]>,
     fences: Vec<Option<Arc<FenceFuture>>>,
     previous_fence: u32,
+    descriptor_set: Arc<DescriptorSet>,
 }
 
 impl Vulkan {
@@ -138,13 +142,25 @@ impl Vulkan {
         let vs = vertex_shader::load(self.device.clone()).expect("failed to create shader module");
         let fs = fragmen_shader::load(self.device.clone()).expect("failed to create shader module");
 
+        let vs = vs.entry_point("main").unwrap();
+        let fs = fs.entry_point("main").unwrap();
+
+        let stages = [
+            PipelineShaderStageCreateInfo::new(vs.clone()),
+            PipelineShaderStageCreateInfo::new(fs),
+        ];
+
+        let vertex_input_state = SimpleVertex::per_vertex().definition(&vs).unwrap();
+
+        let layout = get_layout(&self.device, stages.clone());
         self.viewport.extent = new_dimensions.into();
         let new_pipeline = get_pipeline(
             &self.device.clone(),
-            &vs.clone(),
-            &fs.clone(),
             &self.render_pass.clone(),
             self.viewport.clone(),
+            layout.clone(),
+            stages.clone(),
+            vertex_input_state,
         );
 
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
@@ -158,6 +174,7 @@ impl Vulkan {
             &new_pipeline,
             &new_framebuffers,
             &self.vertex_buffer,
+            &self.descriptor_set,
         );
     }
     pub fn initialize(window: &Arc<Window>, elements: Vec<Triangle>) -> Self {
@@ -200,7 +217,7 @@ impl Vulkan {
         }
 
         let vertex_buffer = Buffer::from_iter(
-            memory_allocator,
+            memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
@@ -223,13 +240,62 @@ impl Vulkan {
             depth_range: 0.0..=1.0,
         };
 
+        let vs = vs.entry_point("main").unwrap();
+        let fs = fs.entry_point("main").unwrap();
+
+        let vertex_input_state = SimpleVertex::per_vertex().definition(&vs).unwrap();
+
+        let stages = [
+            PipelineShaderStageCreateInfo::new(vs),
+            PipelineShaderStageCreateInfo::new(fs),
+        ];
+
+        let layout = get_layout(&device, stages.clone());
+
         let pipeline = get_pipeline(
             &device.clone(),
-            &vs.clone(),
-            &fs.clone(),
             &render_pass.clone(),
             viewport.clone(),
+            layout.clone(),
+            stages.clone(),
+            vertex_input_state,
         );
+
+        let color_buffer = Buffer::from_data(
+            memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            ColorUniform {
+                input_color: [1.0, 1.0, 1.0, 1.0],
+            },
+        )
+        .unwrap();
+
+        let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
+        let pipeline_layout = pipeline.layout();
+
+        let descriptor_set_layouts = pipeline_layout.set_layouts();
+        let descriptor_set_layout_index = 0;
+        let descriptor_set_layout = descriptor_set_layouts
+            .get(descriptor_set_layout_index)
+            .unwrap();
+        let descriptor_set = DescriptorSet::new(
+            descriptor_set_allocator,
+            descriptor_set_layout.clone(),
+            [WriteDescriptorSet::buffer(0, color_buffer)],
+            [],
+        )
+        .unwrap();
 
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
             device.clone(),
@@ -242,6 +308,7 @@ impl Vulkan {
             &pipeline,
             &framebuffers,
             &vertex_buffer,
+            &descriptor_set,
         );
         let frames_in_flight = images.len();
         Vulkan {
@@ -254,6 +321,7 @@ impl Vulkan {
             vertex_buffer,
             fences: vec![None; frames_in_flight],
             previous_fence: 0,
+            descriptor_set,
         }
     }
 }
@@ -264,6 +332,7 @@ pub fn get_command_buffers(
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
     vertex_buffer: &Subbuffer<[SimpleVertex]>,
+    descriptor_set: &Arc<DescriptorSet>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -290,6 +359,13 @@ pub fn get_command_buffers(
                     .unwrap()
                     .bind_pipeline_graphics(pipeline.clone())
                     .unwrap()
+                    .bind_descriptor_sets(
+                        PipelineBindPoint::Graphics,
+                        pipeline.layout().clone(),
+                        0,
+                        descriptor_set.clone(),
+                    )
+                    .unwrap()
                     .bind_vertex_buffers(0, vertex_buffer.clone())
                     .unwrap()
                     .draw(vertex_buffer.len() as u32, 1, 0, 0)
@@ -303,31 +379,27 @@ pub fn get_command_buffers(
         .collect()
 }
 
-pub fn get_pipeline(
+pub fn get_layout(
     device: &Arc<Device>,
-    vs: &Arc<ShaderModule>,
-    fs: &Arc<ShaderModule>,
-    render_pass: &Arc<RenderPass>,
-    viewport: Viewport,
-) -> Arc<GraphicsPipeline> {
-    let vs = vs.entry_point("main").unwrap();
-    let fs = fs.entry_point("main").unwrap();
-
-    let vertex_input_state = SimpleVertex::per_vertex().definition(&vs).unwrap();
-
-    let stages = [
-        PipelineShaderStageCreateInfo::new(vs),
-        PipelineShaderStageCreateInfo::new(fs),
-    ];
-
-    let layout = PipelineLayout::new(
+    stages: [PipelineShaderStageCreateInfo; 2],
+) -> Arc<PipelineLayout> {
+    PipelineLayout::new(
         device.clone(),
         PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
             .into_pipeline_layout_create_info(device.clone())
             .unwrap(),
     )
-    .unwrap();
+    .unwrap()
+}
 
+pub fn get_pipeline(
+    device: &Arc<Device>,
+    render_pass: &Arc<RenderPass>,
+    viewport: Viewport,
+    layout: Arc<PipelineLayout>,
+    stages: [PipelineShaderStageCreateInfo; 2],
+    vertex_input_state: VertexInputState,
+) -> Arc<GraphicsPipeline> {
     let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
     GraphicsPipeline::new(
@@ -359,6 +431,12 @@ pub fn get_pipeline(
 pub struct SimpleVertex {
     #[format(R32G32_SFLOAT)]
     pub position: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Default, BufferContents)]
+struct ColorUniform {
+    input_color: [f32; 4], // RGBA color
 }
 
 pub fn get_framebuffers(
