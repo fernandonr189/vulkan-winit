@@ -6,7 +6,7 @@ type FenceFuture = FenceSignalFuture<
 
 use vulkano::{
     Validated, VulkanError, VulkanLibrary,
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage,
         PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
@@ -60,7 +60,7 @@ pub struct Vulkan {
     device: Arc<Device>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
     queue: Arc<Queue>,
-    vertex_buffer: Subbuffer<[SimpleVertex]>,
+    elements: Vec<Triangle>,
     fences: Vec<Option<Arc<FenceFuture>>>,
     previous_fence: u32,
     descriptor_set: Arc<DescriptorSet>,
@@ -167,14 +167,16 @@ impl Vulkan {
             self.device.clone(),
             Default::default(),
         ));
+        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(self.device.clone()));
 
         self.command_buffers = get_command_buffers(
             &command_buffer_allocator,
             &self.queue,
             &new_pipeline,
             &new_framebuffers,
-            &self.vertex_buffer,
+            self.elements.clone(),
             &self.descriptor_set,
+            &memory_allocator,
         );
     }
     pub fn initialize(window: &Arc<Window>, elements: Vec<Triangle>) -> Self {
@@ -210,26 +212,6 @@ impl Vulkan {
         let framebuffers = get_framebuffers(&images, &render_pass.clone());
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-
-        let mut vertices: Vec<SimpleVertex> = Vec::new();
-        for mut element in elements {
-            vertices.append(&mut element.vertices);
-        }
-
-        let vertex_buffer = Buffer::from_iter(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            vertices,
-        )
-        .unwrap();
 
         let vs = vertex_shader::load(device.clone()).expect("failed to create shader module");
         let fs = fragmen_shader::load(device.clone()).expect("failed to create shader module");
@@ -307,8 +289,9 @@ impl Vulkan {
             &queue,
             &pipeline,
             &framebuffers,
-            &vertex_buffer,
+            elements.clone(),
             &descriptor_set,
+            &memory_allocator,
         );
         let frames_in_flight = images.len();
         Vulkan {
@@ -318,7 +301,7 @@ impl Vulkan {
             device,
             command_buffers,
             queue,
-            vertex_buffer,
+            elements,
             fences: vec![None; frames_in_flight],
             previous_fence: 0,
             descriptor_set,
@@ -331,8 +314,9 @@ pub fn get_command_buffers(
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
-    vertex_buffer: &Subbuffer<[SimpleVertex]>,
+    elements: Vec<Triangle>,
     descriptor_set: &Arc<DescriptorSet>,
+    memory_allocator: &Arc<StandardMemoryAllocator>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
     framebuffers
         .iter()
@@ -356,22 +340,39 @@ pub fn get_command_buffers(
                             ..Default::default()
                         },
                     )
-                    .unwrap()
-                    .bind_pipeline_graphics(pipeline.clone())
-                    .unwrap()
-                    .bind_descriptor_sets(
-                        PipelineBindPoint::Graphics,
-                        pipeline.layout().clone(),
-                        0,
-                        descriptor_set.clone(),
-                    )
-                    .unwrap()
-                    .bind_vertex_buffers(0, vertex_buffer.clone())
-                    .unwrap()
-                    .draw(vertex_buffer.len() as u32, 1, 0, 0)
-                    .unwrap()
-                    .end_render_pass(SubpassEndInfo::default())
                     .unwrap();
+                for element in elements.iter() {
+                    let vertex_buffer = Buffer::from_iter(
+                        memory_allocator.clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::VERTEX_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        element.vertices.clone(),
+                    )
+                    .unwrap();
+
+                    builder
+                        .bind_pipeline_graphics(pipeline.clone())
+                        .unwrap()
+                        .bind_descriptor_sets(
+                            PipelineBindPoint::Graphics,
+                            pipeline.layout().clone(),
+                            0,
+                            descriptor_set.clone(),
+                        )
+                        .unwrap()
+                        .bind_vertex_buffers(0, vertex_buffer.clone())
+                        .unwrap()
+                        .draw(vertex_buffer.len() as u32, 1, 0, 0)
+                        .unwrap();
+                }
+                builder.end_render_pass(SubpassEndInfo::default()).unwrap();
             }
 
             builder.build().unwrap()
@@ -426,7 +427,7 @@ pub fn get_pipeline(
     .unwrap()
 }
 
-#[derive(BufferContents, Vertex)]
+#[derive(BufferContents, Vertex, Clone, Debug)]
 #[repr(C)]
 pub struct SimpleVertex {
     #[format(R32G32_SFLOAT)]
