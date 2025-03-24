@@ -65,6 +65,8 @@ pub struct Vulkan {
     memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     previous_fence: u32,
+    stages: [PipelineShaderStageCreateInfo; 2],
+    vertex_input_state: VertexInputState,
 }
 
 impl Vulkan {
@@ -138,28 +140,15 @@ impl Vulkan {
 
         let new_framebuffers = get_framebuffers(&new_images, &self.render_pass.clone());
 
-        let vs = vertex_shader::load(self.device.clone()).expect("failed to create shader module");
-        let fs = fragmen_shader::load(self.device.clone()).expect("failed to create shader module");
-
-        let vs = vs.entry_point("main").unwrap();
-        let fs = fs.entry_point("main").unwrap();
-
-        let stages = [
-            PipelineShaderStageCreateInfo::new(vs.clone()),
-            PipelineShaderStageCreateInfo::new(fs),
-        ];
-
-        let vertex_input_state = SimpleVertex::per_vertex().definition(&vs).unwrap();
-
-        let layout = get_layout(&self.device, stages.clone());
+        let layout = get_layout(&self.device, self.stages.clone());
         self.viewport.extent = new_dimensions.into();
         let new_pipeline = get_pipeline(
             &self.device.clone(),
             &self.render_pass.clone(),
             self.viewport.clone(),
             layout.clone(),
-            stages.clone(),
-            vertex_input_state,
+            self.stages.clone(),
+            &self.vertex_input_state,
         );
 
         self.command_buffers = get_command_buffers(
@@ -232,7 +221,7 @@ impl Vulkan {
             viewport.clone(),
             layout.clone(),
             stages.clone(),
-            vertex_input_state,
+            &vertex_input_state,
         );
 
         for element in elements.iter_mut() {
@@ -299,6 +288,8 @@ impl Vulkan {
             previous_fence: 0,
             memory_allocator,
             command_buffer_allocator,
+            stages,
+            vertex_input_state,
         }
     }
 }
@@ -398,7 +389,7 @@ pub fn get_pipeline(
     viewport: Viewport,
     layout: Arc<PipelineLayout>,
     stages: [PipelineShaderStageCreateInfo; 2],
-    vertex_input_state: VertexInputState,
+    vertex_input_state: &VertexInputState,
 ) -> Arc<GraphicsPipeline> {
     let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
@@ -407,7 +398,7 @@ pub fn get_pipeline(
         None,
         GraphicsPipelineCreateInfo {
             stages: stages.into_iter().collect(),
-            vertex_input_state: Some(vertex_input_state),
+            vertex_input_state: Some(vertex_input_state.clone()),
             input_assembly_state: Some(InputAssemblyState::default()),
             viewport_state: Some(ViewportState {
                 viewports: [viewport].into_iter().collect(),
