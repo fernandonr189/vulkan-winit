@@ -38,8 +38,8 @@ use vulkano::{
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::{
-        self, FromWindowError, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
-        SwapchainCreateInfo, SwapchainPresentInfo,
+        self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        SwapchainPresentInfo,
     },
     sync::{
         self, GpuFuture,
@@ -173,7 +173,7 @@ impl Vulkan {
     }
     pub fn initialize(window: &Arc<Window>, mut elements: Vec<Triangle>) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
-        let surface = create_surface(window.clone(), instance.clone())
+        let surface = Surface::from_window(instance.clone(), window.clone())
             .expect("Failed to create Vulkan surface");
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -518,14 +518,6 @@ pub fn create_instance(window: &Arc<Window>) -> Result<Arc<Instance>, Validated<
         },
     );
     instance
-}
-
-pub fn create_surface(
-    window: Arc<Window>,
-    instance: Arc<Instance>,
-) -> Result<Arc<Surface>, FromWindowError> {
-    let surface = Surface::from_window(instance.clone(), window.clone());
-    surface
 }
 
 pub fn create_swapchain(
