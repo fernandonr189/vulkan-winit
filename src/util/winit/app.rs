@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use vulkano::image::SampleCount;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -67,6 +68,7 @@ impl ApplicationHandler for App {
                         Shape::new_rectangle(0.0, 0.0, 0.5, 0.5, [1.0, 0.0, 1.0, 1.0]),
                     ],
                     true,
+                    SampleCount::Sample4,
                 ));
                 println!("Vulkan initialized");
             }

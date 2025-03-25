@@ -19,8 +19,8 @@ use vulkano::{
         Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
         physical::{PhysicalDevice, PhysicalDeviceType},
     },
-    format::Format,
-    image::{Image, ImageUsage, view::ImageView},
+    format::{ClearValue, Format},
+    image::{Image, ImageCreateInfo, ImageType, ImageUsage, SampleCount, view::ImageView},
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::{
@@ -69,6 +69,7 @@ pub struct Vulkan {
     stages: [PipelineShaderStageCreateInfo; 2],
     vertex_input_state: VertexInputState,
     layout: Arc<PipelineLayout>,
+    multisample_state: MultisampleState,
 }
 impl Vulkan {
     pub fn redraw(&mut self) -> bool {
@@ -139,7 +140,15 @@ impl Vulkan {
             .expect("failed to recreate swapchain");
         self.swapchain = new_swapchain;
 
-        let new_framebuffers = get_framebuffers(&new_images, &self.render_pass.clone());
+        let multisampled_image = create_multisampled_image(
+            &self.memory_allocator.clone(),
+            window.inner_size().into(),
+            self.swapchain.image_format(),
+            self.multisample_state.rasterization_samples,
+        );
+
+        let new_framebuffers =
+            get_framebuffers(&new_images, &multisampled_image, &self.render_pass.clone());
 
         self.viewport.extent = new_dimensions.into();
         let new_pipeline = get_pipeline(
@@ -149,6 +158,7 @@ impl Vulkan {
             self.layout.clone(),
             self.stages.clone(),
             &self.vertex_input_state,
+            self.multisample_state.clone(),
         );
 
         self.command_buffers = get_command_buffers(
@@ -160,7 +170,12 @@ impl Vulkan {
             &self.memory_allocator,
         );
     }
-    pub fn initialize(window: &Arc<Window>, mut elements: Vec<Shape>, allow_tearing: bool) -> Self {
+    pub fn initialize(
+        window: &Arc<Window>,
+        mut elements: Vec<Shape>,
+        allow_tearing: bool,
+        samples: SampleCount,
+    ) -> Self {
         let instance = create_instance(window).expect("Failed to create Vulkan instance");
         let surface = Surface::from_window(instance.clone(), window.clone())
             .expect("Failed to create Vulkan surface");
@@ -190,10 +205,21 @@ impl Vulkan {
         let (swapchain, images) =
             create_swapchain(&physical_device, &surface, &window, &device, allow_tearing);
 
-        let render_pass = get_render_pass(device.clone(), swapchain.clone());
-        let framebuffers = get_framebuffers(&images, &render_pass.clone());
+        let render_pass = get_render_pass(device.clone(), swapchain.clone(), samples);
 
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+        let multisampled_image = create_multisampled_image(
+            &memory_allocator.clone(),
+            window.inner_size().into(),
+            swapchain.image_format(),
+            samples,
+        );
+        let framebuffers = get_framebuffers(&images, &multisampled_image, &render_pass.clone());
+
+        let multisample_state = MultisampleState {
+            rasterization_samples: samples,
+            ..MultisampleState::default()
+        };
 
         let vs = vertex_shader::load(device.clone()).expect("failed to create shader module");
         let fs = fragment_shader::load(device.clone()).expect("failed to create shader module");
@@ -223,6 +249,7 @@ impl Vulkan {
             layout.clone(),
             stages.clone(),
             &vertex_input_state,
+            multisample_state.clone(),
         );
 
         for element in elements.iter_mut() {
@@ -292,11 +319,12 @@ impl Vulkan {
             stages,
             vertex_input_state,
             layout,
+            multisample_state,
         }
     }
 }
 
-pub fn get_command_buffers(
+fn get_command_buffers(
     command_buffer_allocator: &Arc<StandardCommandBufferAllocator>,
     queue: &Arc<Queue>,
     pipeline: &Arc<GraphicsPipeline>,
@@ -307,6 +335,9 @@ pub fn get_command_buffers(
     framebuffers
         .iter()
         .map(|framebuffer| {
+            let clear_values_count = framebuffer.attachments().len();
+            let clear_values: Vec<Option<ClearValue>> =
+                vec![Some([0.1, 0.1, 0.1, 1.0].into()); clear_values_count];
             let mut builder = AutoCommandBufferBuilder::primary(
                 command_buffer_allocator.clone(),
                 queue.queue_family_index(),
@@ -318,7 +349,7 @@ pub fn get_command_buffers(
                 builder
                     .begin_render_pass(
                         RenderPassBeginInfo {
-                            clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
+                            clear_values,
                             ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                         },
                         SubpassBeginInfo {
@@ -377,7 +408,7 @@ pub fn get_command_buffers(
         .collect()
 }
 
-pub fn get_layout(
+fn get_layout(
     device: &Arc<Device>,
     stages: [PipelineShaderStageCreateInfo; 2],
 ) -> Arc<PipelineLayout> {
@@ -390,13 +421,14 @@ pub fn get_layout(
     .unwrap()
 }
 
-pub fn get_pipeline(
+fn get_pipeline(
     device: &Arc<Device>,
     render_pass: &Arc<RenderPass>,
     viewport: Viewport,
     layout: Arc<PipelineLayout>,
     stages: [PipelineShaderStageCreateInfo; 2],
     vertex_input_state: &VertexInputState,
+    multisample_state: MultisampleState,
 ) -> Arc<GraphicsPipeline> {
     let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
@@ -412,7 +444,7 @@ pub fn get_pipeline(
                 ..Default::default()
             }),
             rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
+            multisample_state: Some(multisample_state),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
                 ColorBlendAttachmentState::default(),
@@ -423,22 +455,9 @@ pub fn get_pipeline(
     )
     .unwrap()
 }
-
-#[derive(BufferContents, Vertex, Clone, Debug)]
-#[repr(C)]
-pub struct SimpleVertex {
-    #[format(R32G32_SFLOAT)]
-    pub position: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Default, BufferContents)]
-struct ColorUniform {
-    input_color: [f32; 4],
-}
-
-pub fn get_framebuffers(
+fn get_framebuffers(
     images: &[Arc<Image>],
+    multisampled_image: &Arc<ImageView>,
     render_pass: &Arc<RenderPass>,
 ) -> Vec<Arc<Framebuffer>> {
     images
@@ -448,7 +467,7 @@ pub fn get_framebuffers(
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments: vec![multisampled_image.clone(), view],
                     ..Default::default()
                 },
             )
@@ -457,25 +476,36 @@ pub fn get_framebuffers(
         .collect::<Vec<_>>()
 }
 
-pub fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
+fn get_render_pass(
+    device: Arc<Device>,
+    swapchain: Arc<Swapchain>,
+    samples: SampleCount,
+) -> Arc<RenderPass> {
     vulkano::single_pass_renderpass!(
         device,
         attachments: {
+            multisample: {
+                format: swapchain.image_format(),
+                samples: samples,
+                load_op: Clear,
+                store_op: DontCare,
+            },
             color: {
                 format: swapchain.image_format(),
-                samples: 1,
+                samples: SampleCount::Sample1,
                 load_op: Clear,
                 store_op: Store,
             },
         },
         pass: {
-            color: [color],
+            color: [multisample],
+            color_resolve: [color],
             depth_stencil: {},
         },
     )
     .unwrap()
 }
-pub fn select_physical_device(
+fn select_physical_device(
     instance: &Arc<Instance>,
     surface: &Arc<Surface>,
     device_extensions: &DeviceExtensions,
@@ -504,7 +534,7 @@ pub fn select_physical_device(
         .expect("no device available")
 }
 
-pub fn create_instance(window: &Arc<Window>) -> Result<Arc<Instance>, Validated<VulkanError>> {
+fn create_instance(window: &Arc<Window>) -> Result<Arc<Instance>, Validated<VulkanError>> {
     let library = VulkanLibrary::new().expect("no local Vulkan library/DLL");
     let required_extensions = Surface::required_extensions(&(*window)).unwrap();
     let instance = Instance::new(
@@ -545,7 +575,33 @@ fn choose_memory_efficient_format(
     available_formats[0].0
 }
 
-pub fn create_swapchain(
+fn create_multisampled_image(
+    allocator: &Arc<StandardMemoryAllocator>,
+    extent: [u32; 2],
+    format: Format,
+    samples: SampleCount,
+) -> Arc<ImageView> {
+    let image = Image::new(
+        allocator.clone(),
+        ImageCreateInfo {
+            image_type: ImageType::Dim2d,
+            format,
+            extent: [extent[0], extent[1], 1],
+            usage: ImageUsage::TRANSIENT_ATTACHMENT | ImageUsage::COLOR_ATTACHMENT,
+            samples,
+            ..Default::default()
+        },
+        AllocationCreateInfo {
+            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    ImageView::new_default(image).unwrap()
+}
+
+fn create_swapchain(
     physical_device: &Arc<PhysicalDevice>,
     surface: &Arc<Surface>,
     window: &Arc<Window>,
@@ -570,7 +626,7 @@ pub fn create_swapchain(
             min_image_count: caps.min_image_count,
             image_format,
             image_extent: dimensions.into(),
-            image_usage: ImageUsage::COLOR_ATTACHMENT,
+            image_usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_DST,
             composite_alpha,
             present_mode: if allow_tearing {
                 PresentMode::Immediate
@@ -581,4 +637,17 @@ pub fn create_swapchain(
         },
     )
     .unwrap()
+}
+
+#[derive(BufferContents, Vertex, Clone, Debug)]
+#[repr(C)]
+pub struct SimpleVertex {
+    #[format(R32G32_SFLOAT)]
+    pub position: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Default, BufferContents)]
+struct ColorUniform {
+    input_color: [f32; 4],
 }
